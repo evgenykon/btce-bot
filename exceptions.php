@@ -40,11 +40,15 @@ class BtceLogicException extends BtceLibException {
     const BAD_TICKER = 22;
     const BAD_TRADE = 23;
     const BAD_DEPTH = 24;
+    const EMPTY_FUNDS = 25;
+    const MINIMAL_FUNDS = 26;
 
     static $messages = array(
         self::BAD_FEE     => 'bad fee',
         self::BAD_TICKER  => 'bad ticker',
         self::BAD_TRADE   => 'bad trade',
-        self::BAD_DEPTH   => 'bad depth'
+        self::BAD_DEPTH   => 'bad depth',
+        self::EMPTY_FUNDS => 'empty funds',
+        self::MINIMAL_FUNDS => 'minimal funds'
     );
 }

@@ -118,8 +118,10 @@ class TradePairs {
     );
 
     public $list = array();
+    public $prev = array();
 
     public $updated = 0; // not exported
+    public $preflife = 0;
 
     /**
      * @param array $storagePairs
@@ -201,7 +203,7 @@ class TradePairs {
     public function load(BTCeAPI &$api) {
         $this->api = $api;
         foreach($this->list as $pairKey => $pair) {
-            log_msg('TradePairs:load >> '.$pairKey);
+            $start_time = microtime(true);
             try {
                 $this->loadFee($pairKey);
                 $this->loadTicker($pairKey);
@@ -209,6 +211,8 @@ class TradePairs {
                 $this->list[$pairKey]->enabled = false;
                 log_msg('TradePairs:load >> error:'.$e->getMessage());
             }
+            $end_time = microtime(true);
+            log_msg('TradePairs:load >> '.$pairKey.'; time:'.($end_time-$start_time));
         }
         $this->updated = time();
         return true;
@@ -280,6 +284,14 @@ class TradePairs {
             }
         }
     }
+
+    public function setPrevPair() {
+        $this->prev = array();
+        foreach($this->list as $key=>$item) {
+            $this->prev[$key] = clone $item;
+        }
+        $this->preflife = $this->updated;
+    }
 }
 
 
@@ -326,7 +338,7 @@ class Funds {
         if (isset($dataArr['updated']))
             $this->updated = $dataArr['updated'];
         else
-            $this->updated = time();
+            $this->updated = 0;
         return true;
     }
 
@@ -358,6 +370,7 @@ class Funds {
             Coin::CODE_PPC  => $this->ppc,
             Coin::CODE_FTC  => $this->ftc,
             Coin::CODE_XPM  => $this->xpm,
+            'updated'       => $this->updated
         );
     }
 
@@ -368,9 +381,10 @@ class Funds {
      */
     public function load(BTCeAPI &$api) {
         $qRes = $api->apiQuery('getInfo');
-        if (isset($qRes['return'])) {
+        if (isset($qRes['return']) && isset($qRes['return']['funds'])) {
             log_msg("Connection success, server time: ".date('Y.m.d H:i:s',$qRes['return']['server_time']));
-            $this->import($qRes['return']);
+            $qRes['return']['updated'] = time();
+            $this->import($qRes['return']['funds']);
         } else {
             throw new BTCeAPIException(StorageException::$messages[StorageException::NO_DATA_IN_RESULT]);
         }
@@ -387,7 +401,8 @@ class StrategyConf {
     public $expire_fund;
     public $expire_pairs;
     public $expire_pairs_life;
-    public $index;
+    public $min_fund_amount;
+    public $diffs;
 
     /**
      * @return array
@@ -465,7 +480,6 @@ class Logic {
     private $storage /** @var Storage $storage */;
     private $strategy /** @var StrategyConf $strategy */;
     private $pairs /** @var TradePairs $pairs */;
-    private $prevPairs; /** @var TradePairs $prevPairs  */
     private $funds; /** @var Funds $funds */
 
 
@@ -485,65 +499,80 @@ class Logic {
         $this->strategy->expire_fund = $params['expire_fund'];
         $this->strategy->expire_pairs = $params['expire_pairs'];
         $this->strategy->expire_pairs_life = $params['expire_pairs_life'];
+        $this->strategy->min_fund_amount = $params['min_fund_amount'];
+        $this->strategy->diffs = $params['diffs'];
     }
 
     public function run() {
-        while(true) {
-            $pairAllowCompare = false;
-            if ($this->funds->updated + $this->strategy->expire_fund < time()) {
-                log_msg('funds expired, refresh...');
-                $this->funds->load($this->api);
-                $this->storage->data->funds = $this->funds->export();
-                $this->storage->save();
-            }
-            if ($this->pairs->updated + $this->strategy->expire_pairs < time()) {
-                log_msg('pairs expired, refresh...');
-
-                $this->prevPairs = clone $this->pairs;
-
-                //@todo: uncorrect clone
-
-                echo $this->prevPairs->list['btc_rur']->vol.PHP_EOL;
-                echo $this->pairs->list['btc_rur']->vol.PHP_EOL;
-
-                $this->pairs->load($this->api);
-
-                echo $this->prevPairs->list['btc_rur']->vol.PHP_EOL;;
-                echo $this->pairs->list['btc_rur']->vol.PHP_EOL;;
-
-                die();
-
-                $this->storage->data->pairs = $this->pairs->export();
-                $this->storage->save();
-                if ($this->prevPairs->updated + $this->strategy->expire_pairs_life > time()) {
-                    $pairAllowCompare = true;
+        try {
+            while(true) {
+                $pairAllowCompare = false;
+                $baseCoinCode = (string)$this->strategy->baseCoin;
+                $baseFund = $this->funds->$baseCoinCode;
+                if (!$baseFund || $this->funds->updated + $this->strategy->expire_fund < time()) {
+                    log_msg('funds expired, refresh...');
+                    $this->funds->load($this->api);
+                    $this->storage->data->funds = $this->funds->export();
+                    $this->storage->save();
                 }
-            }
-            if ($pairAllowCompare) {
-                log_msg('apply strategy ...');
-                log_msg("-------------------");
-                log_msg("Base coin\t".$this->strategy->baseCoin);
-                $code = (string)$this->strategy->baseCoin;
-                $lookPairs = Coin::getPairKeys($code);
-                if ($lookPairs) {
-                    foreach($lookPairs as $_pair_code) {
-                        if (isset($this->pairs->list[$_pair_code]) && $this->prevPairs->list[$_pair_code]) {
-                            $pair = &$this->pairs->list[$_pair_code];
-                            /** @var Pair $pair */
-                            log_msg($_pair_code."\tnow = \tvalue:".$pair->vol."\tsell:".$pair->sell."\tbuy:".$pair->buy."\ttime:".$pair->time);
-                            $pair = &$this->prevPairs->list[$_pair_code];
-                            log_msg($_pair_code."\tprev = \tvalue:".$pair->vol."\tsell:".$pair->sell."\tbuy:".$pair->buy."\ttime:".$pair->time);
-                        } else {
-                            log_msg("fail to load pair: ".$_pair_code);
-                        }
+                $baseCoinFund = $this->funds->$baseCoinCode;
+                /** @var Coin $baseCoinFund */
+                if ($baseCoinFund->amount <= 0) {
+                    throw new BtceLogicException('empty base coin funds', BtceLogicException::EMPTY_FUNDS);
+                }
+                if ($baseCoinFund->amount <= $this->strategy->min_fund_amount) {
+                    throw new BtceLogicException('minimal base coin funds', BtceLogicException::EMPTY_FUNDS);
+                }
+
+                if ($this->pairs->updated + $this->strategy->expire_pairs < time()) {
+                    log_msg('pairs expired, refresh...');
+                    $this->pairs->setPrevPair();
+                    $this->pairs->load($this->api);
+                    $this->storage->data->pairs = $this->pairs->export();
+                    $this->storage->save();
+                    if ($this->pairs->preflife + $this->strategy->expire_pairs_life > time()) {
+                        $pairAllowCompare = true;
                     }
                 }
+                if ($pairAllowCompare) {
+                    log_msg('apply strategy ...');
+                    log_msg("-------------------");
+                    log_msg("Base coin\t".$this->strategy->baseCoin);
+                    $code = (string)$this->strategy->baseCoin;
+                    $lookPairs = Coin::getPairKeys($code);
+
+                    if ($lookPairs) {
+                        foreach($lookPairs as $_pair_code) {
+                            if (isset($this->pairs->list[$_pair_code]) && $this->pairs->prev[$_pair_code]) {
+                                $pair = &$this->pairs->list[$_pair_code];
+                                /** @var Pair $pair */
+                                log_msg($_pair_code."\tnow = \ts:".$pair->sell."\tb:".$pair->buy);
+                                $pairPrev = &$this->pairs->prev[$_pair_code];
+                                /** @var Pair $pairPrev */
+                                log_msg($_pair_code."\tprev = \ts:".$pairPrev->sell."\tb:".$pairPrev->buy);
+
+                                if (!isset($this->strategy->diffs[$_pair_code])) {
+                                    log_msg('no diff strategy for pair: '.$_pair_code);
+                                    continue;
+                                }
+                                if ($pair->sell - $this->strategy->diffs[$_pair_code] > $pairPrev->sell) {
+                                    log_msg('Sell diff capture: was ['.$pairPrev->sell.'], now ['.$pair->sell.'], diff = '.($pair->sell - $pairPrev->sell).'');
+                                }
 
 
 
+                            } else {
+                                log_msg("fail to load pair: ".$_pair_code);
+                            }
+                        }
+                    }
+                } else {
 
+                }
+                sleep(20);
             }
-            sleep(20);
+        } catch (BtceLogicException $e) {
+            log_msg('Logic exception ['.$e->getCode().'] >> '.$e->getMessage());
         }
     }
 }

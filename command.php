@@ -25,6 +25,10 @@ try {
         'expire_fund'       => 60*10,
         'expire_pairs'      => 60,
         'expire_pairs_life' => 60*2,
+        'min_fund_amount'   => 0.012,
+        'diffs'  => array(
+            'btc_rur'       => 2
+        )
     );
     $logic->init($startParams);
     $logic->run();
