@@ -22,13 +22,22 @@ try {
     $logic = new Logic();
     $startParams = array(
         'baseCoin'          => new Coin('btc'),
+        'min_fund_amount'   => 0.012,
         'expire_fund'       => 60*10,
         'expire_pairs'      => 60,
         'expire_pairs_life' => 60*2,
-        'min_fund_amount'   => 0.012,
-        'diffs'  => array(
-            'btc_rur'       => 2
-        )
+        'diffs_sell'  => array(
+            'btc_rur'       => 60,
+            'btc_usd'       => 2,
+            'btc_eur'       => 2,
+            'ltc_btc'       => 0.002,
+        ),
+        'diffs_buy'  => array(
+            'btc_rur'       => 60,
+            'btc_usd'       => 2,
+            'btc_eur'       => 2,
+            'ltc_btc'       => 0.002,
+        ),
     );
     $logic->init($startParams);
     $logic->run();
