@@ -27,8 +27,8 @@ try {
         'expire_pairs'      => 60,
         'expire_pairs_life' => 60*2,
         'diffs_sell'  => array(
-            'btc_rur'       => 60,
-            'btc_usd'       => 2,
+            'btc_rur'       => 15,
+            'btc_usd'       => 1,
             'btc_eur'       => 2,
             'ltc_btc'       => 0.002,
         ),
@@ -37,6 +37,10 @@ try {
             'btc_usd'       => 2,
             'btc_eur'       => 2,
             'ltc_btc'       => 0.002,
+        ),
+        'capture_count'     => array(
+            'sell'          => 2,
+            'buy'           => 6
         ),
     );
     $logic->init($startParams);

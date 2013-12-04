@@ -45,6 +45,20 @@ class Coin {
                 self::CODE_BTC.'_'.self::CODE_USD,
                 self::CODE_BTC.'_'.self::CODE_EUR,
                 self::CODE_LTC.'_'.self::CODE_BTC,
+                self::CODE_LTC.'_'.self::CODE_USD,
+                self::CODE_LTC.'_'.self::CODE_RUR,
+                self::CODE_LTC.'_'.self::CODE_EUR,
+                self::CODE_NMC.'_'.self::CODE_BTC,
+                self::CODE_NMC.'_'.self::CODE_USD,
+                self::CODE_NVC.'_'.self::CODE_BTC,
+                self::CODE_NVC.'_'.self::CODE_USD,
+                self::CODE_USD.'_'.self::CODE_RUR,
+                self::CODE_EUR.'_'.self::CODE_USD,
+                self::CODE_TRC.'_'.self::CODE_BTC,
+                self::CODE_PPC.'_'.self::CODE_BTC,
+                self::CODE_PPC.'_'.self::CODE_USD,
+                self::CODE_FTC.'_'.self::CODE_BTC,
+                self::CODE_XPM.'_'.self::CODE_BTC
             )
         );
         if (isset($keys[$code])) {
@@ -94,6 +108,7 @@ class Pair {
         $this->enabled = true;
         $this->tradeList = array();
         $this->depthList = array();
+        $this->refreshRequired = true;
     }
 
     /**
@@ -116,12 +131,19 @@ class TradePairs {
         array(Coin::CODE_BTC,Coin::CODE_RUR),
         array(Coin::CODE_BTC,Coin::CODE_EUR),
         array(Coin::CODE_LTC,Coin::CODE_BTC),
-        /*array(Coin::CODE_BTC,Coin::CODE_EUR),
-        array(Coin::CODE_LTC,Coin::CODE_BTC),
         array(Coin::CODE_LTC,Coin::CODE_USD),
         array(Coin::CODE_LTC,Coin::CODE_RUR),
-        array(Coin::CODE_LTC,Coin::CODE_EUR),*/
-        // @todo
+        array(Coin::CODE_LTC,Coin::CODE_EUR),
+        array(Coin::CODE_NMC,Coin::CODE_BTC),
+        array(Coin::CODE_NMC,Coin::CODE_USD),
+        array(Coin::CODE_NVC,Coin::CODE_BTC),
+        array(Coin::CODE_NVC,Coin::CODE_USD),
+        array(Coin::CODE_USD,Coin::CODE_RUR),
+        array(Coin::CODE_TRC,Coin::CODE_BTC),
+        array(Coin::CODE_PPC,Coin::CODE_BTC),
+        array(Coin::CODE_PPC,Coin::CODE_USD),
+        array(Coin::CODE_FTC,Coin::CODE_BTC),
+        array(Coin::CODE_XPM,Coin::CODE_BTC),
     );
 
     public $list = array();
@@ -141,6 +163,18 @@ class TradePairs {
         if (count($storagePairs)) {
             $this->import($storagePairs);
         }
+    }
+
+    /**
+     * @return string
+     */
+    public function __toString() {
+        $out = 'TradePairs /updated:'.date('Y-m-d H:i:s',$this->updated).'/'.PHP_EOL;
+        foreach($this->list as $pairKey => $pair) {
+            /** @var Pair $pair */
+            $out .= $pairKey.': sell['.$pair->sell.'] buy['.$pair->buy.'] up['.date('Ymd H:i:s',$pair->updated).'] / refresh'.(int)$pair->refreshRequired.'/'.PHP_EOL;
+        }
+        return $out;
     }
 
     /**
@@ -196,6 +230,7 @@ class TradePairs {
                 $obj->buy       = $pair['buy'];
                 $obj->sell      = $pair['sell'];
                 $obj->updated   = $pair['updated'];
+                $obj->refreshRequired = true;
             }
         }
         return true;
@@ -208,16 +243,19 @@ class TradePairs {
     public function load(BTCeAPI &$api) {
         $this->api = $api;
         foreach($this->list as $pairKey => $pair) {
-            $start_time = microtime(true);
-            try {
-                $this->loadFee($pairKey);
-                $this->loadTicker($pairKey);
-            } catch (BtceLogicException $e) {
-                $this->list[$pairKey]->enabled = false;
-                log_msg('TradePairs:load >> error:'.$e->getMessage());
+            /** @var Pair $pair */
+            if ($pair->refreshRequired) {
+                $start_time = microtime(true);
+                try {
+                    $this->loadFee($pairKey);
+                    $this->loadTicker($pairKey);
+                } catch (BtceLogicException $e) {
+                    $this->list[$pairKey]->enabled = false;
+                    log_msg('TradePairs:load >> error:'.$e->getMessage());
+                }
+                $end_time = microtime(true);
+                log_msg('TradePairs:load >> '.$pairKey.'; time:'.(number_format($end_time-$start_time,4)) );
             }
-            $end_time = microtime(true);
-            log_msg('TradePairs:load >> '.$pairKey.'; time:'.($end_time-$start_time));
         }
         $this->updated = time();
         return true;
@@ -465,6 +503,11 @@ class Loader {
  * Class StrategyConf
  */
 class StrategyConf {
+
+    const SELL = 'sell';
+    const BUY  = 'buy';
+    const WAIT = 'wait';
+
     public $baseCoin; /** @var Coin $baseCoin */
     public $expire_fund;
     public $expire_pairs;
@@ -472,6 +515,9 @@ class StrategyConf {
     public $min_fund_amount;
     public $diff_sell;
     public $diff_buy;
+    public $capture_count_sell;
+    public $capture_count_buy;
+
 
     /**
      * @return array
@@ -517,6 +563,8 @@ class Logic {
         $this->strategy->min_fund_amount = $params['min_fund_amount'];
         $this->strategy->diff_sell = $params['diffs_sell'];
         $this->strategy->diff_buy = $params['diffs_buy'];
+        $this->strategy->capture_count_sell = $params['capture_count']['sell'];
+        $this->strategy->capture_count_buy = $params['capture_count']['buy'];
         $this->funds->operationCoin = new Coin((string)$this->strategy->baseCoin, $this->strategy->baseCoin->amount - $this->strategy->min_fund_amount);
     }
 
@@ -528,7 +576,6 @@ class Logic {
                 $baseFund = $this->funds->$baseCoinCode;
                 $operationAmount = $this->funds->operationCoin->amount;
                 if (!$baseFund || $this->funds->updated + $this->strategy->expire_fund < time()) {
-                    log_msg('funds expired, refresh...');
                     $this->funds->load($this->api);
                     $this->storage->data->funds = $this->funds->export();
                     $this->storage->save();
@@ -568,38 +615,17 @@ class Logic {
                     log_msg('apply strategy ...');
                     log_msg("-------------------");
                     log_msg("Base coin\t".$this->strategy->baseCoin);
-                    $code = (string)$this->strategy->baseCoin;
-                    $lookPairs = Coin::getPairKeys($code);
+                    $BaseCoinCode = (string)$this->strategy->baseCoin;
+                    $lookPairs = Coin::getPairKeys($BaseCoinCode);
 
                     if ($lookPairs) {
-                        log_msg("*********** Operation table ***************");
+
+                        log_msg(sprintf('Operation amount: %f',$operationAmount));
                         foreach($lookPairs as $_pair_code) {
                             if (isset($this->pairs->list[$_pair_code]) && $this->pairs->prev[$_pair_code]) {
-                                $pair = &$this->pairs->list[$_pair_code];
-                                log_msg("----------- Pair: [$_pair_code] ---------------");
-                                log_msg("\t\tsell\t\tbuy");
-                                /** @var Pair $pair */
-                                $pairPrev = &$this->pairs->prev[$_pair_code];
-                                /** @var Pair $pairPrev */
-                                log_msg("Was\t\t".sprintf("%01.5f",$pairPrev->sell)."\t".sprintf("%01.5f",$pairPrev->buy));
-                                log_msg("Now\t\t".sprintf("%01.5f",$pair->sell)."\t".sprintf("%01.5f",$pair->buy));
-
-
-                                $sell_diff = $this->getDiff($pair->sell,$pairPrev->sell);
-                                $buy_diff = $this->getDiff($pair->buy,$pairPrev->buy,$pair->fee);
-
-                                log_msg("Diff:\t\t$sell_diff\t\t$buy_diff");
-
-                                if (!isset($this->strategy->diff_sell[$_pair_code])) {
-                                    log_msg('no sell strategy for pair: '.$_pair_code);
-                                    continue;
-                                }
-                                if (!isset($this->strategy->diff_buy[$_pair_code])) {
-                                    log_msg('no buy strategy for pair: '.$_pair_code);
-                                    continue;
-                                }
-
-                                log_msg("Strategy diff:\t".($this->strategy->diff_sell[$_pair_code])."\t\t".($this->strategy->diff_buy[$_pair_code]));
+                                $pair = &$this->pairs->list[$_pair_code];/** @var Pair $pair */
+                                $pairPrev = &$this->pairs->prev[$_pair_code]; /** @var Pair $pairPrev */
+                                log_msg("----------- Pair: $_pair_code ---------------");
 
                                 if (!isset($this->weights[$_pair_code])) {
                                     $this->weights[$_pair_code] = array(
@@ -607,41 +633,118 @@ class Logic {
                                         'buy'   => 0
                                     );
                                 }
-                                if ($this->weights[$_pair_code]['sell'] == 4) {
-                                    log_msg('MAX sell weight');
-                                } else {
-                                    if ($sell_diff > $this->strategy->diff_sell[$_pair_code]) {
-                                        log_msg('[CAPTURE] Sell diff: was ['.$pairPrev->sell.'], now ['.$pair->sell.'], diff = '.$sell_diff);
-                                        $this->weights[$_pair_code]['sell']++;
-                                    } else if ($sell_diff < 0 && $this->weights[$_pair_code]['sell'] > 0) {
-                                        $this->weights[$_pair_code]['sell']--;
-                                    }
-                                }
 
-                                if ($this->weights[$_pair_code]['buy'] == 4) {
-                                    log_msg('MAX buy weight');
-                                } else {
-                                    if ( $buy_diff*-1 > $this->strategy->diff_buy[$_pair_code]) {
-                                        log_msg('[CAPTURE] Buy diff: was ['.$pairPrev->buy.'], now ['.$pair->buy.'], diff = '.$buy_diff);
-                                        $this->weights[$_pair_code]['buy']++;
-                                    } else if ($buy_diff > 0 && $this->weights[$_pair_code]['buy'] > 0) {
-                                        $this->weights[$_pair_code]['buy']--;
-                                    }
-                                }
+                                $diff = 0;
+                                if ($pair->coin_a->code == $BaseCoinCode) {
+                                    $lookAt = StrategyConf::SELL; // look at sell prices (we need they increases)
+                                    log_msg("Look at:\t".$lookAt);
+                                    $diff = $this->getDiff($pair->sell,$pairPrev->sell);
 
-                                log_msg("Weights:\t".$this->weights[$_pair_code]['sell']."\t\t".$this->weights[$_pair_code]['buy']);
+                                    log_msg("Buy    was                 now                 diff          order         ");
+                                    log_msg("       ".
+                                        str_pad('1 '.$pairPrev->coin_a->code.' =',20,' ',STR_PAD_RIGHT).
+                                        str_pad('1 '.$pair->coin_a->code.' =',20,' ',STR_PAD_RIGHT).
+                                        str_pad('',14,' ',STR_PAD_RIGHT).
+                                        str_pad($operationAmount.' '.$pairPrev->coin_a->code.' =',14,' ',STR_PAD_RIGHT)
+                                    );
+                                    log_msg("       ".
+                                        str_pad(sprintf("%f",$pairPrev->sell).' '.$pairPrev->coin_b->code,20,' ',STR_PAD_RIGHT).
+                                        str_pad(sprintf("%f",$pairPrev->sell).' '.$pair->coin_b->code,20,' ',STR_PAD_RIGHT).
+                                        str_pad($diff.' '.$pair->coin_b->code,14,' ',STR_PAD_RIGHT).
+                                        str_pad($this->getOrderResult($operationAmount,$pair->sell,$pair->fee).' '.$pairPrev->coin_b->code,14,' ',STR_PAD_RIGHT)
+                                    );
+
+                                    if (!isset($this->strategy->diff_sell[$_pair_code])) {
+                                        log_msg('no sell strategy for pair: '.$_pair_code);
+                                        continue;
+                                    }
+                                    log_msg(sprintf("Strategy diff:\t%f / %f",$this->strategy->diff_sell[$_pair_code],$diff));
+
+                                } else if ($pair->coin_b->code == $BaseCoinCode) {
+                                    $lookAt = StrategyConf::BUY; // look at buy prices (we need they decreases)
+                                    log_msg("Look at:\t".$lookAt);
+                                    $diff = $this->getDiff($pair->buy,$pairPrev->buy);
+
+                                    log_msg("Sell   was                 now                 diff          order         ");
+                                    log_msg("       ".
+                                        str_pad('1 '.$pairPrev->coin_a->code.' =',20,' ',STR_PAD_RIGHT).
+                                        str_pad('1 '.$pair->coin_a->code.' =',20,' ',STR_PAD_RIGHT).
+                                        str_pad('',14,' ',STR_PAD_RIGHT).
+                                        str_pad($operationAmount.' '.$pairPrev->coin_a->code.' =',14,' ',STR_PAD_RIGHT)
+                                    );
+                                    log_msg("       ".
+                                        str_pad(sprintf("%f",$pairPrev->buy).' '.$pairPrev->coin_b->code,20,' ',STR_PAD_RIGHT).
+                                        str_pad(sprintf("%f",$pairPrev->buy).' '.$pair->coin_b->code,20,' ',STR_PAD_RIGHT).
+                                        str_pad($diff.' '.$pair->coin_b->code,14,' ',STR_PAD_RIGHT).
+                                        str_pad($this->getOrderResult($operationAmount,$pair->buy,$pair->fee).' '.$pairPrev->coin_b->code,14,' ',STR_PAD_RIGHT)
+                                    );
+
+                                    if (!isset($this->strategy->diff_buy[$_pair_code])) {
+                                        log_msg('no buy strategy for pair: '.$_pair_code);
+                                        continue;
+                                    }
+                                    log_msg(sprintf("Strategy diff:\t%f / %f",$this->strategy->diff_buy[$_pair_code],$diff));
+
+                                } else {
+                                    $this->pairs->list[$_pair_code]->refreshRequired = false;
+                                    continue;
+                                }
 
                                 $doOrderOperations = false;
+                                $this->pairs->list[$_pair_code]->refreshRequired = true;
 
-                                if ($this->weights[$_pair_code]['sell'] == 3) {
-                                    $value = $operationAmount * $pair->sell;
-                                    log_msg('[MAKE ORDER] sell:'.$operationAmount.' with price:'.$value);
-                                    $this->weights[$_pair_code]['sell'] = 4;
-                                    $operationCode = $pair->coin_b->code;
-                                    $opFund = $this->funds->$operationCode;
-                                    /** @var Coin $opFund */
-                                    $this->funds->operationCoin = new Coin($operationCode,$opFund->amount);
-                                    $doOrderOperations = true;
+                                if ($lookAt == StrategyConf::SELL) {
+                                    if ($this->weights[$_pair_code]['sell'] == $this->strategy->capture_count_sell+1) {
+                                        log_msg('Sell weight: MAX');
+                                    } else {
+                                        if ($diff > $this->strategy->diff_sell[$_pair_code]) {
+                                            log_msg('[CAPTURE]');
+                                            log_msg('Sell diff: was ['.$pairPrev->sell.'], now ['.$pair->sell.'], diff = '.$diff);
+                                            $this->weights[$_pair_code]['sell']++;
+                                        } else if ($diff < 0 && $this->weights[$_pair_code]['sell'] > 0) {
+                                            $this->weights[$_pair_code]['sell']--;
+                                        }
+                                        log_msg('Sell weight: '.$this->weights[$_pair_code]['sell']);
+                                        if ($this->weights[$_pair_code]['sell'] == $this->strategy->capture_count_sell) {
+                                            // make order operation
+                                            $orderResult = $this->getOrderResult($operationAmount,$pair->sell,$pair->fee);
+                                            log_msg('[MAKE ORDER] sell:'.$operationAmount.' with price:'.$pair->sell.', fee:'.$pair->fee.', result:'.$orderResult);
+                                            $this->weights[$_pair_code]['sell'] = $this->strategy->capture_count_sell+1;
+                                            $operationCode = $pair->coin_b->code;
+                                            $opFund = $this->funds->$operationCode;
+                                            /** @var Coin $opFund */
+                                            $this->funds->operationCoin = new Coin($operationCode,$opFund->amount);
+                                            $doOrderOperations = true;
+                                            log_msg('operation coin is: '.$this->funds->operationCoin->infoString());
+                                        }
+                                    }
+
+                                } elseif ($lookAt == StrategyConf::BUY) {
+                                    if ($this->weights[$_pair_code]['buy'] == $this->strategy->capture_count_buy+1) {
+                                        log_msg('Buy weight: MAX');
+                                    } else {
+                                        if ( $diff*-1 > $this->strategy->diff_buy[$_pair_code]) {
+                                            log_msg('[CAPTURE]');
+                                            log_msg('Buy diff: was ['.$pairPrev->buy.'], now ['.$pair->buy.'], diff = '.$diff);
+                                            $this->weights[$_pair_code]['buy']++;
+                                        } else if ($diff > 0 && $this->weights[$_pair_code]['buy'] > 0) {
+                                            $this->weights[$_pair_code]['buy']--;
+                                        }
+                                        log_msg('Buy weight: '.$this->weights[$_pair_code]['buy']);
+                                        if ($this->weights[$_pair_code]['buy'] == $this->strategy->capture_count_buy) {
+                                            // make order operation
+                                            $orderResult = $this->getOrderResult($operationAmount,$pair->buy,$pair->fee);
+                                            log_msg('[MAKE ORDER] buy:'.$operationAmount.' with price:'.$pair->buy.', fee:'.$pair->fee.', result:'.$orderResult);
+                                            $this->weights[$_pair_code]['buy'] = $this->strategy->capture_count_buy+1;
+                                            $operationCode = $pair->coin_a->code;
+                                            $opFund = $this->funds->$operationCode;
+                                            /** @var Coin $opFund */
+                                            $this->funds->operationCoin = new Coin($operationCode,$opFund->amount);
+                                            $doOrderOperations = true;
+                                            log_msg('operation coin is: '.$this->funds->operationCoin->infoString());
+                                        }
+                                    }
+
                                 }
 
                                 if ($doOrderOperations) {
@@ -654,9 +757,8 @@ class Logic {
                             }
                         }
                     }
-                } else {
-
                 }
+                log_msg('waiting 20 seconds...');
                 sleep(20);
             }
         } catch (BtceLogicException $e) {
@@ -667,5 +769,17 @@ class Logic {
 
     private function getDiff($c1,$c2) {
         return  number_format(round($c1-$c2,5),5,'.','');
+    }
+
+    /**
+     * @param $amount
+     * @param $price
+     * @param $fee
+     * @return float
+     */
+    private function getOrderResult($amount,$price,$fee) {
+        $val = $amount * $price;
+        $fee = $val * $fee * 0.01;
+        return $val - $fee;
     }
 }
