@@ -40,17 +40,24 @@ class BtceLogicException extends BtceLibException {
     const BAD_TICKER = 22;
     const BAD_TRADE = 23;
     const BAD_DEPTH = 24;
-    const EMPTY_FUNDS = 25;
+    const EMPTY_BASE_FUND = 25;
+    const NO_AVAILABLE_FUNDS = 251;
     const MINIMAL_FUNDS = 26;
     const ORDER_TIMEOUT = 27;
+    const UNKNOWN_PAIR = 28;
+    const REQUIRE_UPDATE_PRICE = 29;
+
 
     static $messages = array(
         self::BAD_FEE     => 'bad fee',
         self::BAD_TICKER  => 'bad ticker',
         self::BAD_TRADE   => 'bad trade',
         self::BAD_DEPTH   => 'bad depth',
-        self::EMPTY_FUNDS => 'empty funds',
+        self::EMPTY_BASE_FUND => 'empty base fund',
         self::MINIMAL_FUNDS => 'minimal funds',
-        self::ORDER_TIMEOUT => 'order timeout'
+        self::ORDER_TIMEOUT => 'order timeout',
+        self::UNKNOWN_PAIR => 'unknown pair',
+        self::REQUIRE_UPDATE_PRICE => 'require update price',
+        self::NO_AVAILABLE_FUNDS => 'no available funds'
     );
 }
