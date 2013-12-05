@@ -742,16 +742,15 @@ class Logic {
                                         }
                                         log_msg('Sell weight: '.$this->weights[$_pair_code]['sell']);
                                         if ($this->weights[$_pair_code]['sell'] == $this->strategy->capture_count_sell) {
-                                            // make order operation
+                                            // make order operation SELL
                                             $orderResult = $this->getOrderResult($operationAmount,$pair->sell,$pair->fee);
                                             log_msg('[MAKE ORDER] sell:'.$operationAmount.' with price:'.$pair->sell.', fee:'.$pair->fee.', result:'.$orderResult);
-                                            $this->weights[$_pair_code]['sell'] = $this->strategy->capture_count_sell+1;
-                                            $operationCode = $pair->coin_b->code;
-                                            $opFund = $this->funds->$operationCode;
-                                            /** @var Coin $opFund */
-                                            $this->funds->operationCoin = new Coin($operationCode,$opFund->amount);
+                                            try {
+                                                $this->orderSell($pair,$operationAmount);
+                                            } catch (BtceLibException $e) {
+                                            }
+
                                             $doOrderOperations = true;
-                                            log_msg('operation coin is: '.$this->funds->operationCoin->infoString());
                                         }
                                     }
 
@@ -768,25 +767,22 @@ class Logic {
                                         }
                                         log_msg('Buy weight: '.$this->weights[$_pair_code]['buy']);
                                         if ($this->weights[$_pair_code]['buy'] == $this->strategy->capture_count_buy) {
-                                            // make order operation
-                                            $orderResult = $this->getOrderResult($operationAmount,$pair->buy,$pair->fee);
-                                            log_msg('[MAKE ORDER] buy:'.$operationAmount.' with price:'.$pair->buy.', fee:'.$pair->fee.', result:'.$orderResult);
-                                            $this->weights[$_pair_code]['buy'] = $this->strategy->capture_count_buy+1;
-                                            $operationCode = $pair->coin_a->code;
-                                            $opFund = $this->funds->$operationCode;
-                                            /** @var Coin $opFund */
-                                            $this->funds->operationCoin = new OperationCoin($operationCode,$opFund->amount,new Coin($operationCode,$pair->buy));
+                                            // make order operation BUY
+                                            $this->orderBuy($pair,$operationAmount);
                                             $doOrderOperations = true;
-                                            log_msg('operation coin is: '.$this->funds->operationCoin->infoString());
                                         }
                                     }
 
                                 }
 
                                 if ($doOrderOperations) {
+                                    foreach($this->pairs->list[$pair] as $_pair) {
+                                        $_pair->refreshRequired = true;
+                                    }
                                     $this->storage->data->pairs = $this->pairs->export();
                                     $this->storage->data->funds = $this->funds->export();
                                     $this->storage->save();
+                                    log_msg('operation coin is: '.$this->funds->operationCoin->infoString());
                                 }
                             } else {
                                 log_msg("fail to load pair: ".$_pair_code);
@@ -817,5 +813,88 @@ class Logic {
         $val = $amount * $price;
         $fee = $val * $fee * 0.01;
         return $val - $fee;
+    }
+
+    /**
+     * @param Pair $pair
+     * @param $amount
+     * @throws BTCeAPIException
+     */
+    private function orderSell(Pair $pair,$amount) {
+        log_msg(sprintf("[MAKE SELL ORDER] amount:%f, price:%f",$amount,$pair->sell));
+        $this->weights[$pair->code]['sell'] = 0;
+        $operationCode = $pair->coin_b->code;
+        $opFund = $this->funds->$operationCode;
+        /** @var Coin $opFund */
+        $this->funds->operationCoin = new OperationCoin($operationCode,$opFund->amount,new Coin($operationCode,$pair->sell));
+        $order = $this->api->makeOrder($amount,(string)$pair->code,BTCeAPI::DIRECTION_SELL,$pair->sell);
+        if (!isset($order['return']) && !isset($order['return']['order_id'])) {
+            throw new BTCeAPIException('makeOrder bad result');
+        }
+        try {
+            $this->expectOrder($order['return']['order_id'],60*15);
+        } catch (BtceLogicException $e) {
+            if ($e->getCode() == BtceLogicException::ORDER_TIMEOUT) {
+                $this->api->cancelOrder($order['return']['order_id']);
+            }
+        }
+        return;
+    }
+
+
+    /**
+     * @param Pair $pair
+     * @param $amount
+     * @throws BTCeAPIException
+     */
+    private function orderBuy(Pair $pair,$amount) {
+        log_msg(sprintf("[MAKE BUY ORDER] amount:%f, price:%f",$amount,$pair->buy));
+        $this->weights[$pair->code]['buy'] = 0;
+        $operationCode = $pair->coin_a->code;
+        $opFund = $this->funds->$operationCode;
+        /** @var Coin $opFund */
+        $this->funds->operationCoin = new OperationCoin($operationCode,$opFund->amount,new Coin($operationCode,$pair->buy));
+        $order = $this->api->makeOrder($amount,(string)$pair->code,BTCeAPI::DIRECTION_BUY,$pair->sell);
+        if (!isset($order['return']) && !isset($order['return']['order_id'])) {
+            throw new BTCeAPIException('makeOrder bad result');
+        }
+        try {
+            $this->expectOrder($order['return']['order_id'],60*15);
+        } catch (BtceLogicException $e) {
+            if ($e->getCode() == BtceLogicException::ORDER_TIMEOUT) {
+                $this->api->cancelOrder($order['return']['order_id']);
+            }
+        }
+
+    }
+
+    /**
+     * @param $idOrder
+     * @param $timeOut
+     * @return bool
+     * @throws BtceLogicException
+     */
+    private function expectOrder($idOrder,$timeOut) {
+        $timeNow = time();
+        $timeEnd = $timeNow + $timeOut;
+        while(true) {
+
+            log_msg('expectOrder: check order history');
+            try {
+                $order = $this->api->getOrderFromHistory($idOrder);
+            } catch (BTCeAPIErrorException $e) {
+                log_msg('expectOrder: getOrderFromHistory result error');
+            }
+            if (isset($order['order_id'])) {
+                return true;
+            }
+
+            if (time() > $timeEnd) {
+                $this->api->cancelOrder($idOrder);
+                throw new BtceLogicException('Order expecting timeout',BtceLogicException::ORDER_TIMEOUT);
+            }
+
+            sleep(30);
+        }
     }
 }

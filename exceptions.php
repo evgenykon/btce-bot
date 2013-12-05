@@ -42,6 +42,7 @@ class BtceLogicException extends BtceLibException {
     const BAD_DEPTH = 24;
     const EMPTY_FUNDS = 25;
     const MINIMAL_FUNDS = 26;
+    const ORDER_TIMEOUT = 27;
 
     static $messages = array(
         self::BAD_FEE     => 'bad fee',
@@ -49,6 +50,7 @@ class BtceLogicException extends BtceLibException {
         self::BAD_TRADE   => 'bad trade',
         self::BAD_DEPTH   => 'bad depth',
         self::EMPTY_FUNDS => 'empty funds',
-        self::MINIMAL_FUNDS => 'minimal funds'
+        self::MINIMAL_FUNDS => 'minimal funds',
+        self::ORDER_TIMEOUT => 'order timeout'
     );
 }

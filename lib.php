@@ -141,12 +141,12 @@ class BTCeAPI {
     }
 
     /**
-     * Place an order
-     * @param type $amount
-     * @param type $pair
-     * @param type $direction
-     * @param type $price
+     * @param $amount
+     * @param $pair
+     * @param $direction
+     * @param $price
      * @return type
+     * @throws BTCeAPIInvalidParameterException
      */
     public function makeOrder($amount, $pair, $direction, $price) {
         if($direction == self::DIRECTION_BUY || $direction == self::DIRECTION_SELL) {
@@ -165,24 +165,32 @@ class BTCeAPI {
     }
 
     /**
-     * Check an order that is complete (non-active)
-     * @param type $orderID
-     * @return type
-     * @throws Exception
+     * @param $orderId
+     * @param $pair
+     * @return mixed
+     * @throws BTCeAPIErrorException
      */
-    public function checkPastOrder($orderID) {
-        $data = $this->apiQuery("OrderList"
+    public function checkPastOrder($orderId,$pair) {
+        $data1 = $this->apiQuery("OrderList"
             ,array(
-                'from_id' => $orderID,
-                'to_id' => $orderID,
-                /*'count' => 15,*/
+                'from_id' => $orderId,
+                'to_id' => $orderId,
                 'active' => 0
             ));
-        if($data['success'] == "0") {
-            throw new BTCeAPIErrorException("Error: ".$data['error']);
-        } else {
-            return($data);
+        $data2 = $this->apiQuery("ActiveOrders"
+            ,array(
+                'pair' => $pair,
+            ));
+        if ($data1['success'] == "0" && $data2['success'] == "0") {
+            throw new BTCeAPIErrorException("Error: ".$data1['error'].' / '.$data2['error']);
         }
+        if (isset($data1['return'][$orderId])) {
+            return  $data1['return'][$orderId];
+        }
+        if (isset($data2['return'][$orderId])) {
+            return  $data2['return'][$orderId];
+        }
+        throw new BTCeAPIErrorException("Error: unknown orderId ".$orderId);
     }
 
     /**
@@ -219,6 +227,38 @@ class BTCeAPI {
      */
     public function getPairDepth($pair) {
         return $this->retrieveJSON($this->public_api.$pair."/depth");
+    }
+
+    /**
+     * @param $orderId
+     * @throws BTCeAPIErrorException
+     */
+    public function getOrderFromHistory($orderId) {
+        $data = $this->apiQuery("TradeHistory"
+            ,array(
+                'from_id' => $orderId,
+                'end_id' => $orderId,
+            ));
+        if ($data['success'] == "0") {
+            throw new BTCeAPIErrorException("Error: ".$data['error']);
+        }
+        return $data['return'][$orderId];
+    }
+
+    /**
+     * @param $orderId
+     * @return bool
+     * @throws BTCeAPIErrorException
+     */
+    public function cancelOrder($orderId) {
+        $data = $this->apiQuery("CancelOrder"
+            ,array(
+                'order_id' => $orderId
+            ));
+        if ($data['success'] == "0") {
+            throw new BTCeAPIErrorException("Error: ".$data['error']);
+        }
+        return true;
     }
 }
 
