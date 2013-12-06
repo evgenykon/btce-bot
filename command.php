@@ -21,8 +21,8 @@ try {
 
     $logic = new Logic();
     $startParams = array(
-        'baseCoin'          => new Coin('btc'),
-        'min_fund_amount'   => 0.012,
+        'baseCoin'          => new Coin('rur'),
+        'min_fund_amount'   => 400,
         'expire_fund'       => 60*10,
         'expire_pairs'      => 60,
         'expire_pairs_life' => 60*2,

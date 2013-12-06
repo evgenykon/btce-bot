@@ -1050,17 +1050,52 @@ class Logic {
     private function runWeightStrategy() {
         /**
          * as now
+         *
          */
     }
 
-    private function runVectorStrategy() {
+    private function TrendVectorStrategy() {
         /**
          * 1) last 12 orders or 18 minutes
          * 2) 6 parts of list
          * 3) calculate sum of sells and buys, count of sell and buy orders for each part
          * 4) compare with rules
-         * 5) define vector type: DNO, PIK, SPAD, POJDEM, STORM, SILENCE
-         * 6) DNO -> buy, PIK -> sell, other -> wait
+         * 5) define vector type: BTM, PEAK, REGRESS, PROGRESS, STORM, CALM, DBLPICK, HEADSHLDRS
+         * 6) compare same vectors, set weights
+         * 7) DNO -> buy, PIK -> sell, other -> wait
+         *
          */
     }
+
+    private function CreamLickStrategy() {
+        /**
+         * 1) define vectors for each pair
+         * 2) get 2 pairs, which have 1 same currency:
+         * 3) if this is PEAK and INC/BTM, then sell in PIK and buy in INC/DNO
+         */
+    }
+
+    private function WeekendStrategy() {
+        /**
+         * 1) buy before weekend and sell after
+         */
+    }
+
+    /**
+     * standart deviation
+     * @param $array
+     * @return float
+     */
+    private function stdDev($array) {
+        if (!count($array))
+            return 0.0;
+        $middle = array_sum($array) / count($array);
+        $vol = 0.0;
+        foreach($array as $i) {
+            $vol += pow($i - $middle,2);
+        }
+        $vol = $vol / count($array);
+        return (float)sqrt($vol);
+    }
+
 }
