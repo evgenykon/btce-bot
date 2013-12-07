@@ -89,3 +89,16 @@ class StrategyConf {
         return $out;
     }
 }
+
+
+function stdDev($array) {
+    if (!count($array))
+        return 0.0;
+    $middle = array_sum($array) / count($array);
+    $vol = 0.0;
+    foreach($array as $i) {
+        $vol += pow($i - $middle,2);
+    }
+    $vol = $vol / count($array);
+    return (float)sqrt($vol);
+}
