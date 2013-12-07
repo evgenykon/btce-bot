@@ -10,6 +10,10 @@
 include_once 'exceptions.php';
 include_once 'lib.php';
 include_once 'storage.php';
+include_once 'coins.php';
+include_once 'funds.php';
+include_once 'pairs.php';
+include_once 'helpers.php';
 include_once 'logic.php';
 
 
@@ -21,8 +25,8 @@ try {
 
     $logic = new Logic();
     $startParams = array(
-        'baseCoin'          => new Coin('rur'),
-        'min_fund_amount'   => 400,
+        'baseCoin'          => new Coin('btc'),
+        'min_fund_amount'   => 0.012,
         'expire_fund'       => 60*10,
         'expire_pairs'      => 60,
         'expire_pairs_life' => 60*2,
