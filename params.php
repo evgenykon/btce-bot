@@ -28,9 +28,12 @@ $startParams = array(
         'buy'           => 6
     ),
     'mysql'             => array(
-        'host'          => '',
-        'user'          => '',
-        'password'      => '',
-        'dbname'        => 'btce'
+        'host'          => 'localhost',
+        'user'          => 'root',
+        'password'      => 'eff',
+        'dbname'        => 'btc'
+    ),
+    'strateg'           => array(
+        'pause'         => 5
     )
 );

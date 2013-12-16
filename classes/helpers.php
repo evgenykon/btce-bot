@@ -16,6 +16,9 @@ class Loader {
     static function storage() {
         global $argv;
         try {
+            if (!isset($argv[1])) {
+                throw new StorageException("No json file in arguments",StorageException::DATA_FILE_NOT_FOUND);
+            }
             $storage = new Storage($argv[1]);
         } catch (StorageException $e) {
             if ($e->getCode() == StorageException::DATA_FILE_NOT_FOUND) {

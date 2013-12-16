@@ -70,6 +70,8 @@ class MysqlDb extends Mysql {
         return $this->row($sql);
     }
 
+
+
     /**
      * @return array
      */
@@ -80,6 +82,15 @@ class MysqlDb extends Mysql {
 
     public function getMaxFund() {
         $sql = "SELECT code,amount FROM btc.funds where funds.lock=0 and amount>0 order by amount desc limit 1";
+        return $this->row($sql);
+    }
+
+    /**
+     * @param $code
+     * @return mixed
+     */
+    public function getFund($code) {
+        $sql = "SELECT code,amount FROM btc.funds where funds.code='$code' limit 1";
         return $this->row($sql);
     }
 
@@ -238,6 +249,15 @@ class MysqlDb extends Mysql {
         );
         log_msg('registerOrder >> '.$sql);
         //return $this->execute($sql);
+    }
+
+    /**
+     * @param $strategy
+     */
+    public function setStrategy($strategy) {
+        $sql = "update conf set strategy='$strategy' where active=1";
+        log_msg('setStrategy >> '.$strategy);
+        $this->execute($sql);
     }
 
 }

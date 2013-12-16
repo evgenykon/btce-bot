@@ -64,7 +64,7 @@ class Logic {
      * @param $fee
      * @return float
      */
-    private function getOrderResult($amount,$price,$fee) {
+    static function getOrderResult($amount,$price,$fee) {
         $val = $amount * $price;
         $fee = $val * $fee * 0.01;
         return $val - $fee;

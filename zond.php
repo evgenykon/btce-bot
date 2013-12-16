@@ -68,10 +68,53 @@ class Zond extends Logic {
         }
     }
 
+    private function calcTrand() {
+        log_msg('calc trand');
+        $DBconf = $this->db->loadActiveConfiguration();
+        if (!isset($DBconf['baseCoin'])) {
+            throw new BtceMysqlException('db conf not loaded');
+        }
+        log_msg(print_r($DBconf,true));
+        $changePairs = Coin::getPairKeys($DBconf['baseCoin']);
+        log_msg(print_r($changePairs,true));
+        if (!count($changePairs)) {
+            throw new BtceLogicException('no change pairs for base coin: '.$DBconf['baseCoin']);
+        }
+        for($i=0;$i<count($changePairs);$i++) {
+            $pairCode=$changePairs[$i];
+            $history = $this->db->loadHistory(array(
+                sprintf("dt >= '%s'",date('Y-m-d H:i:s',strtotime('-10 minutes'))),
+                sprintf("dt <= '%s'",date('Y-m-d H:i:s')),
+                sprintf("pair = '%s'",$pairCode),
+            ));
+            if (!count($history)) {
+                continue;
+            }
+            $heights = array();
+            $weight=0;
+            for($j=0;$j<count($history);$j++) {
+                switch($history[$j]['vector']) {
+                    case 'NOCHANGE':
+                        $heights[]=0;break;
+                    case 'UP':
+                        $heights[]=1;break;
+                    case 'DOWN':
+                        $heights[]=-1;break;
+                }
+                $weight+=$history[$j]['weight'];
+            }
+            $weight = (int)round(($weight / count($history)) * 10);
+            $trend = array_sum($heights);
+            $this->db->setTrend($pairCode,$trend,$weight);
+            echo $pairCode.' >> trend:'.$trend.' / weight: '.$weight.PHP_EOL;
+        }
+    }
+
     public function run() {
         try {
             $this->getFunds();
             $this->getPairs();
+            $this->calcTrand();
         } catch(Exception $e) {
             log_msg('run >> exception: ('.$e->getCode().') '.$e->getMessage());
         }
