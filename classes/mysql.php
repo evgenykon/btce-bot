@@ -81,7 +81,7 @@ class MysqlDb extends Mysql {
     }
 
     public function getMaxFund() {
-        $sql = "SELECT code,amount FROM btc.funds where funds.lock=0 and amount>0 order by amount desc limit 1";
+        $sql = "SELECT code,amount FROM btc.funds where funds.lock=0 and amount>0 order by fundCoef desc limit 1";
         return $this->row($sql);
     }
 
@@ -90,7 +90,7 @@ class MysqlDb extends Mysql {
      * @return mixed
      */
     public function getFund($code) {
-        $sql = "SELECT code,amount FROM btc.funds where funds.code='$code' limit 1";
+        $sql = "SELECT code,amount,fundCoef FROM btc.funds where funds.code='$code' limit 1";
         return $this->row($sql);
     }
 
@@ -146,6 +146,7 @@ class MysqlDb extends Mysql {
             date('Y-m-d H:i:s'),
             (int)!$coin->active
         );
+        echo $sql.PHP_EOL;
         $res = $this->execute($sql);
         if (!$res) {
             throw new BtceMysqlException($this->h->error);
@@ -193,7 +194,7 @@ class MysqlDb extends Mysql {
      * @param $code
      */
     public function setBaseCoin($code) {
-        $sql = "update conf set active=0 where id>0";
+        $sql = "update conf set active=0 where idconf>0";
         $this->execute($sql);
         $sql = "update conf set active=1 where baseCoin='$code'";
         $this->execute($sql);

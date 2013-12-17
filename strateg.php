@@ -88,12 +88,25 @@ class Strateg {
                         $maxtrend = 0;
                         for($i=0;$i<count($prices);$i++) {
                             if (abs($prices[$i]['trend']) > $maxtrend && abs($prices[$i]['trend']) > 3) {
-                                $maxtrend = $prices[$i]['trend'];
-                                $trendPair = $prices[$i]['pair'];
+                                $orders = $this->db->getLastOrder($trendPair);
+                                if (count($orders)>0) {
+                                    $maxtrend = $prices[$i]['trend'];
+                                    $trendPair = $prices[$i]['pair'];
+                                }
+                            }
+                        }
+                        if (!$trendPair) {
+                            log_msg('ANL >> no trands with our pairs, look anything...');
+                            for($i=0;$i<count($prices);$i++) {
+                                if (abs($prices[$i]['trend']) > $maxtrend && abs($prices[$i]['trend']) > 3) {
+                                    $orders = $this->db->getLastOrder($trendPair);
+                                    $maxtrend = $prices[$i]['trend'];
+                                    $trendPair = $prices[$i]['pair'];
+                                }
                             }
                         }
                         if ($maxtrend && $trendPair) {
-                            log_msg('ANL >> get pair with interesting trend: '.$trendPair.' / '.$maxtrend);
+                            log_msg('ANL >> get pair : '.$trendPair.' / trend: '.$maxtrend);
                             $coinA = substr($trendPair,0,3);
                             $coinB = substr($trendPair,4,3);
                             if ($maxtrend > 0) {
@@ -114,9 +127,9 @@ class Strateg {
                                     $this->db->setStrategy('SELL');
                                     $this->db->setStage('WB');
                                 } else if ($fund == $coinA) { // FUND/XXX, down, sell for XXX
-                                    log_msg('ANL >> we need SELL(BT)');
+                                    log_msg('ANL >> we need SELL(BB)');
                                     $this->db->setStrategy('SELL');
-                                    $this->db->setStage('BT');
+                                    $this->db->setStage('ST');
                                 }
                             }
                             $this->pause = 0;
@@ -147,23 +160,24 @@ class Strateg {
                             throw new BtceLogicException('BT.fundAmount['.$DBconf['baseCoin'].'] is low than minFund:['.$DBconf['minFund'].']');
                         }
                         $fundAmount = $fundAmount - $DBconf['minFund'];
+                        $fee = $fundAmount * 0.0002;
+                        $fundAmount -= $fee;
+                        $fundAmount = round($fundAmount,8);
+                        $buyAmount = round($fundAmount/$prices[0]['buy'],8);
                         // expected result
-                        $calcResult = Logic::getOrderResult($fundAmount,$prices[0]['buy'],0.02);
-                        log_msg('BT: try to make order. Pair: '.$prices[0]['pair'].', BUY '.$fundAmount.' with price: '.$prices[0]['buy']);
+                        $calcResult = Logic::getOrderResult($buyAmount,$prices[0]['buy'],0.02);
+                        log_msg('BT: try to make order. Pair: '.$prices[0]['pair'].', BUY '.$buyAmount.' with price: '.$prices[0]['buy']);
                         // make real order
                         try {
-                            $apiResult = $api->makeOrder($fundAmount,$prices[0]['pair'],BTCeAPI::DIRECTION_BUY,$prices[0]['buy']);
+                            $apiResult = $api->makeOrder($buyAmount,$prices[0]['pair'],BTCeAPI::DIRECTION_BUY,$prices[0]['buy']);
                         } catch(BTCeAPIException $e) {
-                            if (strpos($e->getMessage(),'It is not enough')) {
-                                $fundAmount -= 0.000001;
-                                $apiResult = $api->makeOrder($fundAmount,$prices[0]['pair'],BTCeAPI::DIRECTION_BUY,$prices[0]['buy']);
-                            }
+                            throw new BTCeAPIException('BT: API exception message:'.$e->getMessage());
                         }
                         if (isset($apiResult['return']) && isset($apiResult['return']['order_id'])) {
                             $orderComplete = $this->expectOrder($apiResult['return']['order_id'],600); // expect order complete for 10 minutes
                             if ($orderComplete) {
                                 // success
-                                $this->db->registerOrder($apiResult['return']['order_id'],$prices[0]['pair'],'buy',$fundAmount,$prices[0]['buy'],$calcResult);
+                                $this->db->registerOrder($apiResult['return']['order_id'],$prices[0]['pair'],'buy',$buyAmount,$prices[0]['buy'],$calcResult);
                                 $bcCode = substr($prices[0]['pair'],0,3);
                                 // set stage for old fund
                                 $this->db->setStage('ANL');
@@ -185,8 +199,14 @@ class Strateg {
                     case 'WP':
                         // Wait for peak
                         log_msg('WP: check...');
-                        $lastOrderRow = $this->db->getLastOrder();
+                        $lastOrderRow = $this->db->getLastOrder($trendPair);
                         $pair = $lastOrderRow['pair'];
+                        if (!$pair) {
+                            log_msg('WP: havent orders with trend pair: '.$trendPair);
+                            $lastOrderRow = $this->db->getLastOrder();
+                            $pair = $lastOrderRow['pair'];
+                        }
+                        log_msg('WP: look at pair: '.$pair);
                         $border = $lastOrderRow['price'] + ($lastOrderRow['price']*0.02*2);
                         $prices = $this->db->loadPrices('trend',$pair);
                         if ($prices[0]['pair'] == $pair) {
@@ -204,12 +224,19 @@ class Strateg {
                                 log_msg('WP >> trend is grow up');
                                 $this->pause = 30;
                             }
+                        } else {
+                            throw new BtceLogicException('WP: Unknown pair '.$pair.', trend pair: '.$trendPair);
                         }
                         break;
 
                     case 'SP':
                         // Sell at peak
-                        $pair = $lastOrderRow['pair'];
+                        if (!$trendPair) {
+                            $lastOrderRow = $this->db->getLastOrder();
+                            $pair = $lastOrderRow['pair'];
+                        } else {
+                            $pair = $trendPair;
+                        }
                         $prices = $this->db->loadPrices('trend',$pair);
                         $this->storage = Loader::storage();
                         $api = Loader::api($this->storage->data->key, $this->storage->data->secret);
@@ -320,8 +347,14 @@ class Strateg {
                     case 'WB':
                         // Wait for bottom
                         log_msg('WB: check...');
-                        $lastOrderRow = $this->db->getLastOrder();
+                        $lastOrderRow = $this->db->getLastOrder($trendPair);
                         $pair = $lastOrderRow['pair'];
+                        if (!$pair) {
+                            log_msg('WB: havent orders with trend pair: '.$trendPair);
+                            $lastOrderRow = $this->db->getLastOrder();
+                            $pair = $lastOrderRow['pair'];
+                        }
+                        log_msg('WB: look at pair: '.$pair);
                         $border = $lastOrderRow['price'] + ($lastOrderRow['price']*0.02*2);
                         $prices = $this->db->loadPrices('trend',$pair);
                         if ($prices[0]['pair'] == $pair) {
@@ -339,12 +372,19 @@ class Strateg {
                                 log_msg('WB >> trend is go down... '.$prices[0]['trend'].' / '.$prices[0]['buy']);
                                 $this->pause = 30;
                             }
+                        } else {
+                            throw new BtceLogicException('WB: Unknown pair '.$pair.', trend pair: '.$trendPair);
                         }
                         break;
 
                     case 'BB':
                         // Buy at bottom
-                        $pair = $lastOrderRow['pair'];
+                        if (!$trendPair) {
+                            $lastOrderRow = $this->db->getLastOrder();
+                            $pair = $lastOrderRow['pair'];
+                        } else {
+                            $pair = $trendPair;
+                        }
                         $prices = $this->db->loadPrices('trend',$pair);
                         $this->storage = Loader::storage();
                         $api = Loader::api($this->storage->data->key, $this->storage->data->secret);
@@ -359,38 +399,39 @@ class Strateg {
                         if (!$fundAmount || $fundAmount < $DBconf['minFund'] || !$prices[0]['buy']) {
                             throw new BtceLogicException('BB.fundAmount['.$DBconf['baseCoin'].'] is low than minFund:['.$DBconf['minFund'].']');
                         }
+
+                        $fundAmount = $fundAmount - $DBconf['minFund'];
+                        $fee = $fundAmount * 0.0002;
+                        $fundAmount -= $fee;
+                        $fundAmount = round($fundAmount,8);
+                        $buyAmount = round($fundAmount/$prices[0]['buy'],8);
                         // expected result
-                        $calcResult = Logic::getOrderResult($fundAmount,$prices[0]['buy'],0.02);
-                        log_msg('BB: try to make order. Pair: '.$prices[0]['pair'].', BUY '.$fundAmount.' with price: '.$prices[0]['buy']);
+                        $calcResult = Logic::getOrderResult($buyAmount,$prices[0]['buy'],0.02);
+                        log_msg('BB: try to make order. Pair: '.$prices[0]['pair'].', BUY '.$buyAmount.' with price: '.$prices[0]['buy']);
                         // make real order
                         try {
-                            $apiResult = $api->makeOrder($fundAmount,$prices[0]['pair'],BTCeAPI::DIRECTION_BUY,$prices[0]['buy']);
+                            $apiResult = $api->makeOrder($buyAmount,$prices[0]['pair'],BTCeAPI::DIRECTION_BUY,$prices[0]['buy']);
                         } catch(BTCeAPIException $e) {
-                            if (strpos($e->getMessage(),'It is not enough')) {
-                                $fundAmount -= 0.000001;
-                                $apiResult = $api->makeOrder($fundAmount,$prices[0]['pair'],BTCeAPI::DIRECTION_BUY,$prices[0]['buy']);
-                            }
+                            throw new BTCeAPIException('BB: API exception message:'.$e->getMessage());
                         }
                         if (isset($apiResult['return']) && isset($apiResult['return']['order_id'])) {
                             $orderComplete = $this->expectOrder($apiResult['return']['order_id'],600); // expect order complete for 10 minutes
                             if ($orderComplete) {
                                 // success
-                                $this->db->registerOrder($apiResult['return']['order_id'],$prices[0]['pair'],'buy',$fundAmount,$prices[0]['buy'],$calcResult);
+                                $this->db->registerOrder($apiResult['return']['order_id'],$prices[0]['pair'],'buy',$buyAmount,$prices[0]['buy'],$calcResult);
                                 $bcCode = substr($prices[0]['pair'],0,3);
                                 // set stage for old fund
                                 $this->db->setStage('ANL');
                                 $this->db->setBaseCoin($bcCode);
                                 // set stage for new fund
-                                $this->db->setStage('ANL');
-                                log_msg('BB: new base coin: '.$bcCode.', next stage is ANL');
+                                $this->db->setStage('WP');
+                                log_msg('BB: new base coin: '.$bcCode.', next stage is WP');
                                 continue;
                             } else {
                                 // fail
                                 log_msg('BB: order is cancelled. Return to ANL stage in current funds');
                                 $this->pause = 30;
                             }
-                        } else {
-                            throw new BTCeAPIException('Bad API result: '.print_r($apiResult,true));
                         }
                         break;
 
@@ -420,7 +461,7 @@ class Strateg {
             try {
                 $order = $api->getOrderFromHistory($idOrder);
             } catch (BTCeAPIErrorException $e) {
-                log_msg('expectOrder: getOrderFromHistory result error');
+                log_msg('expectOrder: getOrderFromHistory result error: '.$e->getMessage);
             }
             if (isset($order['order_id'])) {
                 return true;
@@ -430,7 +471,7 @@ class Strateg {
                 $api->cancelOrder($idOrder);
                 return false;
             }
-
+            log_msg('expectOrder: retry after 30 sec');
             sleep(30);
         }
     }

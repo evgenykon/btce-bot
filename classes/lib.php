@@ -149,6 +149,7 @@ class BTCeAPI {
      * @throws BTCeAPIInvalidParameterException
      */
     public function makeOrder($amount, $pair, $direction, $price) {
+        echo "Api:makeOrder >> amount($amount), pair($pair), direction($direction), price($price)".PHP_EOL;
         if($direction == self::DIRECTION_BUY || $direction == self::DIRECTION_SELL) {
             $data = $this->apiQuery("Trade"
                 ,array(
@@ -242,6 +243,7 @@ class BTCeAPI {
         if ($data['success'] == "0") {
             throw new BTCeAPIErrorException("Error: ".$data['error']);
         }
+        log_msg('getOrderFromHistory >> result: '.print_r($data,true));
         return $data['return'][$orderId];
     }
 
