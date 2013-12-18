@@ -222,10 +222,6 @@ class MysqlDb extends Mysql {
         return $this->row($sql);
     }
 
-    public function getBestPairForSale($coin) {
-        $sql = "select pair from pair_prices $like order by ".$order;
-        return $this->rows($sql);
-    }
 
     /**
      * @param $btceId
@@ -234,11 +230,15 @@ class MysqlDb extends Mysql {
      * @param $amount
      * @param $price
      * @param $result
+     * @param int $timestamp
+     * @return bool|mysqli_result
      */
-    public function registerOrder($btceId,$pair,$operation,$amount,$price,$result) {
-        $dt = date('Y-m-d H:i:s');
+    public function registerOrder($btceId,$pair,$operation,$amount,$price,$result,$timestamp=0) {
+        if (!$timestamp)
+            $timestamp = time();
+        $dt = date('Y-m-d H:i:s',$timestamp);
         $comment = $operation.' '.$amount.' '.substr($pair,0,3).' for '.$result.' '.substr($pair,3,3);
-        $sql = sprintf("insert into order_history set btceId=%d, pair='%s', operation='%s', amount=%f, price=%f, result=%f, dt=%s, comment='%s'",
+        $sql = sprintf("insert into order_history set btceId=%d, pair='%s', operation='%s', amount=%f, price=%f, result=%f, dt='%s', comment='%s'",
             $btceId,
             $pair,
             $operation,
@@ -249,7 +249,7 @@ class MysqlDb extends Mysql {
             $comment
         );
         log_msg('registerOrder >> '.$sql);
-        //return $this->execute($sql);
+        return $this->execute($sql);
     }
 
     /**
@@ -259,6 +259,19 @@ class MysqlDb extends Mysql {
         $sql = "update conf set strategy='$strategy' where active=1";
         log_msg('setStrategy >> '.$strategy);
         $this->execute($sql);
+    }
+
+    /**
+     * @param $orders
+     * @return bool
+     */
+    public function updateOrderHistory($orders) {
+        $sql = "truncate table order_history";
+        $this->execute($sql);
+        foreach ($orders as $orderId=>$order) {
+            $this->registerOrder($orderId,$order['pair'],$order['type'],$order['amount'],$order['rate'],$order['amount']*$order['rate'],$order['timestamp']);
+        }
+        return true;
     }
 
 }

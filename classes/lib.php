@@ -247,6 +247,16 @@ class BTCeAPI {
         return $data['return'][$orderId];
     }
 
+    public function getAllHistory() {
+        $data = $this->apiQuery("TradeHistory",array(
+
+        ));
+        if ($data['success'] == "0") {
+            throw new BTCeAPIErrorException("Error: ".$data['error']);
+        }
+        return $data['return'];
+    }
+
     /**
      * @param $orderId
      * @return bool

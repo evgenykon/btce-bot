@@ -287,10 +287,10 @@ class Logic {
         } catch (BtceLogicException $e) {
             log_msg('compare blocked: '.$e->getMessage());
             if ($e->getCode() == BtceLogicException::REQUIRE_UPDATE_PRICE) {
-                continue;
+
             } elseif ($e->getCode() == BtceLogicException::NO_AVAILABLE_FUNDS) {
                 $this->sleepSec(60*15);
-                continue;
+
             }
         }
 
