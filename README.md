@@ -2,4 +2,4 @@
 Bitcoin Trade Bot (experimental)
 
 
-[![AUR](https://img.shields.io/aur/license/yaourt.svg)]()
+<a href="https://github.com/effus/btce-bot/"><img src="https://img.shields.io/github/license/effus/btce-bot.svg" alt=""></a>
